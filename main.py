@@ -292,7 +292,7 @@ def main():
                             "times": [current_time.isoformat()], 
                             'icon': 'circle', 
                             'iconstyle': {'color': 'blue'},
-                            'popup': f'Storage Power capacity: {storage_power_capacity[j]/1000:.2f} kW <br> Filling state={100*stored_E[j].x/storage_Emax[j]:.2f}% ({stored_E[j].x:.2f} of {storage_Emax[j]:.2f})'      
+                            'popup': f'Storage Power capacity: {storage_power_capacity[j]/1000:.2f} kW <br> Charging state={100*stored_E[j].x/storage_Emax[j]:.2f}% ({stored_E[j].x:.2f} of {storage_Emax[j]:.2f})'      
                         }
                     }
                     for j in range(num_storage)
