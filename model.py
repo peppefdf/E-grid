@@ -1,6 +1,7 @@
 import gurobipy as gr
 from gurobipy import GRB
 import numpy as np
+from geopy.distance import geodesic
 
 def define_model(input_data):
 
@@ -18,6 +19,8 @@ def define_model(input_data):
     time_power = input_data['time_power']
     resistivity_factor = input_data['resistivity_factor']
 
+    V0 = 230
+
     # Define the model
     model = gr.Model(GRB.BINARY)
 
@@ -29,9 +32,14 @@ def define_model(input_data):
     stored_E = model.addVars(num_storage, lb=0, ub=max(storage_Emax), name='stored_E')
     
     # Define the power loss as dictionaries
-    resistance_GU = {(i, j): resistivity_factor*np.linalg.norm([generator_positions[i, 0] - user_positions[j, 0], generator_positions[i, 1] - user_positions[j, 1]]) for i in range(num_generators) for j in range(num_users)}
-    resistance_SU = {(i, j): resistivity_factor*np.linalg.norm([storage_positions[i, 0] - user_positions[j, 0], storage_positions[i, 1] - user_positions[j, 1]]) for i in range(num_storage) for j in range(num_users)}
-    resistance_GS = {(i, j): resistivity_factor*np.linalg.norm([generator_positions[i, 0] - storage_positions[j, 0], generator_positions[i, 1] - storage_positions[j, 1]]) for i in range(num_generators) for j in range(num_storage)}
+    #resistance_GU = {(i, j): resistivity_factor*np.linalg.norm([generator_positions[i, 0] - user_positions[j, 0], generator_positions[i, 1] - user_positions[j, 1]]) for i in range(num_generators) for j in range(num_users)}
+    resistance_GU = {(i, j): resistivity_factor*geodesic((generator_positions[i, 0], generator_positions[i, 1]), (user_positions[j, 0], user_positions[j, 1])).meters for i in range(num_generators) for j in range(num_users)}
+    
+    #resistance_SU = {(i, j): resistivity_factor*np.linalg.norm([storage_positions[i, 0] - user_positions[j, 0], storage_positions[i, 1] - user_positions[j, 1]]) for i in range(num_storage) for j in range(num_users)}
+    resistance_SU = {(i, j): resistivity_factor*geodesic((storage_positions[i, 0], storage_positions[i, 1]), (user_positions[j, 0], user_positions[j, 1])).meters for i in range(num_storage) for j in range(num_users)}
+    
+    #resistance_GS = {(i, j): resistivity_factor*np.linalg.norm([generator_positions[i, 0] - storage_positions[j, 0], generator_positions[i, 1] - storage_positions[j, 1]]) for i in range(num_generators) for j in range(num_storage)}
+    resistance_GS = {(i, j): resistivity_factor*geodesic((generator_positions[i, 0], generator_positions[i, 1]), (storage_positions[j, 0], storage_positions[j, 1])).meters for i in range(num_generators) for j in range(num_storage)}
 
     power_loss_GU = model.addVars(num_generators, num_users, lb=0, ub=1000, name='power_loss_GU')
     power_loss_GS = model.addVars(num_generators, num_storage, lb=0, ub=1000, name='power_loss_GS')
@@ -80,16 +88,28 @@ def define_model(input_data):
             if j != nearest_generators[i]:
                 model.addConstr(x_GS[j, i] == 0, f'storage_connection_constraint_{i}_{j}')
 
-    for i in range(num_generators):
-        for j in range(num_users):
-            model.addConstr(power_loss_GU[i, j] == resistance_GU[i, j]*(user_requirements[j]/230)**2, 'power_loss_GU_{}'.format(i, j))
-    for i in range(num_storage):
-        for j in range(num_users):
-            model.addConstr(power_loss_SU[i, j] == resistance_SU[i, j]*(user_requirements[j]/230)**2, 'power_loss_SU_{}'.format(i, j))
 
     for i in range(num_generators):
+        for j in range(num_users):
+            model.addConstr(power_loss_GU[i, j] == 0.5*(V0 - (V0**2 - 4 * resistance_GU[i,j]*user_requirements[j])**0.5), 'power_loss_GU_{}'.format(i, j))
+    for i in range(num_storage):
+        for j in range(num_users):
+            model.addConstr(power_loss_SU[i, j] == 0.5*(V0 - (V0**2 - 4 * resistance_SU[i,j]*user_requirements[j])**0.5), 'power_loss_SU_{}'.format(i, j))
+    for i in range(num_generators):
         for j in range(num_storage):
-            model.addConstr(power_loss_GS[i, j] == resistance_GS[i, j]*(storage_power_capacity[j]/230)**2, 'power_loss_GS_{}'.format(i, j)) 
+            model.addConstr(power_loss_GS[i, j] == 0.5*(V0 - (V0**2 - 4 * resistance_GS[i,j]*storage_power_capacity[j])**0.5), 'power_loss_SU_{}'.format(i, j))
+
+
+    #for i in range(num_generators):
+    #    for j in range(num_users):
+    #        model.addConstr(power_loss_GU[i, j] == resistance_GU[i, j]*(user_requirements[j]/230)**2, 'power_loss_GU_{}'.format(i, j))
+    #for i in range(num_storage):
+    #    for j in range(num_users):
+    #        model.addConstr(power_loss_SU[i, j] == resistance_SU[i, j]*(user_requirements[j]/230)**2, 'power_loss_SU_{}'.format(i, j))
+    #for i in range(num_generators):
+    #    for j in range(num_storage):
+    #        model.addConstr(power_loss_GS[i, j] == resistance_GS[i, j]*(storage_power_capacity[j]/230)**2, 'power_loss_GS_{}'.format(i, j)) 
+
 
     for j in range(num_users):
         model.addConstr(

@@ -4,11 +4,11 @@ from gurobipy import GRB
 import folium
 from folium.plugins import TimestampedGeoJson
 import os
-import random
 import math
 import matplotlib.pyplot as plt
-from scipy import signal
 import datetime
+import geopandas as gpd
+import random
 
 center_lat = 43.220034483305525
 center_lon = -2.021473511525546
@@ -20,8 +20,13 @@ def generate_inputs(generator_power, user_requirements):
     num_users = 7
     num_storage = 3
 
-    #resistivity_factor = 0.01/230**2
-    resistivity_factor = 0.001
+    #resistivity_factor = 0.001
+    #resistivity_factor = 1.12*10**-5 # Ohm/m
+    #resistivity_factor = 5.0*10**-5 # Ohm/m
+    # resistivity of Al = 2.82*10**-8 Ohm*m
+    #resistivity_factor = 2.82*10**-8/0.0005 # Ohm/m 
+    resistivity_factor = 2.5*10**-4 # Ohm/m 
+    
 
     # Define the center of the 2km2 square in Andoain
 
@@ -30,22 +35,43 @@ def generate_inputs(generator_power, user_requirements):
     # Convert the square size from kilometers to degrees
     square_size_deg = square_size_km / 111  # approximate conversion factor
 
+
+    # Save the map as an HTML file
+    curr_dir = os.getcwd()
+    shp_path = os.path.join(curr_dir,'Gipuzkoa_Shapefile','Persons_Powerreq_PVcapacity')
+    # Read the shapefile into a GeoDataFrame
+    Persons_Powerreq_PVcapacity_gdf = gpd.read_file(shp_path)
+    centroids = Persons_Powerreq_PVcapacity_gdf['geometry'].centroid
+
+    # Select random centroids for generators
+    random.seed(42)  # Set the seed value
+    generator_positions = random.sample(list(centroids), num_generators)
+    user_positions = random.sample([c for c in centroids if c not in generator_positions], num_users)
+
+    generator_positions = np.array([(point.y, point.x) for point in generator_positions])
+    user_positions = np.array([(point.y, point.x) for point in user_positions])
+
+    """
     # Generate random positions for nodes
     np.random.seed(0)
     generator_positions = np.random.uniform(-square_size_deg, square_size_deg, (num_generators, 2)) + [center_lat, center_lon]
     user_positions = np.random.uniform(-square_size_deg, square_size_deg, (num_users, 2)) + [center_lat, center_lon]
     #storage_positions = np.random.uniform(-square_size_deg, square_size_deg, (num_storage, 2)) + [center_lat, center_lon]
     # Generate storage nodes coordinates 100 meters away from the generators
+    """
+    
     storage_positions = np.zeros((num_storage, 2))
     for i in range(num_storage):
         # Randomly select a generator
         generator_index = i
         # Generate a random angle
+        np.random.seed(42)  # Set the seed value
         #angle = random.uniform(0, 2 * math.pi)
         angle = np.random.uniform(0, 2 * np.pi)
         # Calculate the x and y coordinates of the storage node
         storage_positions[i, 0] = generator_positions[generator_index, 0] + 100 * math.cos(angle) / 111111  # convert meters to degrees
         storage_positions[i, 1] = generator_positions[generator_index, 1] + 100 * math.sin(angle) / 111111  # convert meters to degrees
+
 
     # Generate random power generation values for generators
     ##generator_power = np.random.uniform(10000, 30000, num_generators)
@@ -158,6 +184,15 @@ def perturb_input(input_data, perturbation_factor=0.1):
 
     return perturbed_data
 
+
+#def get_color_for_charging_state(charging_state):
+#    r = int(255 * (1 - charging_state / 100))
+#    g = int(255 * charging_state / 100)
+#    return '#{:02x}{:02x}00'.format(r, g)
+def get_opacity_for_charging_state(charging_state):
+    return charging_state / 100
+
+
 def main():
 
     #start_time = datetime.datetime(2017, 6, 2, 0, 0, 0)
@@ -178,6 +213,7 @@ def main():
     solutions = []
     all_features = []
     max_generators_power = max(max(row) for row in generators_power)
+    excess_power = []
     for ii in range(len(generators_power[0])):
         generator_power = generators_power[:, ii][:3]
         user_requirements = user_pow_requ[:, ii]
@@ -281,6 +317,7 @@ def main():
                     for j in range(num_users)
                     ] 
         all_features.extend(points_lines)
+        #'iconstyle': {'color': get_color_for_charging_state(100*stored_E[j].x/storage_Emax[j])},
         points_lines = [
                     {
                         "type": "Feature",
@@ -290,14 +327,18 @@ def main():
                         },
                         "properties": {
                             "times": [current_time.isoformat()], 
-                            'icon': 'circle', 
-                            'iconstyle': {'color': 'blue'},
+                            'icon': 'circle',                           
+                            'iconstyle': {'color': 'green',
+                                        'radius': 5 + (15 * (100*stored_E[j].x/storage_Emax[j]) / 100),  # Calculate radius based on charging state
+                                        'fillOpacity': get_opacity_for_charging_state(100*stored_E[j].x/storage_Emax[j])
+                                        },
                             'popup': f'Storage Power capacity: {storage_power_capacity[j]/1000:.2f} kW <br> Charging state={100*stored_E[j].x/storage_Emax[j]:.2f}% ({stored_E[j].x:.2f} of {storage_Emax[j]:.2f})'      
                         }
                     }
                     for j in range(num_storage)
                     ] 
         all_features.extend(points_lines)
+
         # Lines G-U
         points_lines = [
             {
@@ -311,9 +352,9 @@ def main():
                     "times": [current_time.isoformat(), current_time.isoformat()],                     
                     "style": {
                             "color": 'black',
-                            "weight": 60* power_GU[i, j].x * x_GU[i, j].x  / (scaling_factor*max_generators_power),
+                            "weight": 50* power_GU[i, j].x * x_GU[i, j].x  / (scaling_factor*max_generators_power),
                             },
-                    'popup': f'Transmitted Power: {power_GU[i, j].x*x_GU[i, j].x/1000.:.2f} kW\nDissipated Power: {power_loss_GU[i, j].x*x_GU[i, j].x/1000:.2f} '      
+                    'popup': f'Transmitted Power: {power_GU[i, j].x*x_GU[i, j].x/1000.:.2f} kW\nDissipated Power: {power_loss_GU[i, j].x*x_GU[i, j].x/1000:.2e} '      
                 }                                   
             }
             for i in range(len(generator_positions))
@@ -335,7 +376,7 @@ def main():
                     "times": [current_time.isoformat(), current_time.isoformat()],                    
                     "style": {
                             "color": 'blue',
-                            "weight": 60*power_GS[i, j].x * x_GS[i, j].x / (scaling_factor*max_generators_power) 
+                            "weight": 50*power_GS[i, j].x * x_GS[i, j].x / (scaling_factor*max_generators_power) 
                             },
                     'popup': f'Transmitted Power: {power_GS[i, j].x*x_GS[i, j].x/1000.:.2f} kW'       
                 }
@@ -359,7 +400,7 @@ def main():
                     "times": [current_time.isoformat(), current_time.isoformat()],                      
                     "style": {
                             "color": 'green',
-                            "weight": 60*power_SU[i, j].x * x_SU[i, j].x / (scaling_factor*max_generators_power)
+                            "weight": 50*power_SU[i, j].x * x_SU[i, j].x / (scaling_factor*max_generators_power)
                             },
                     'popup': f'Transmitted Power: {power_SU[i, j].x*x_SU[i, j].x/1000.:.2f} kW'         
                 }
@@ -391,21 +432,21 @@ def main():
             for j in range(num_users):
                 power = power_GU[i, j].x * x_GU[i, j].x 
                 dissipated_power = power_loss_GU[i, j].x * x_GU[i, j].x 
-                folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [user_positions[j, 0], user_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power}', color='black', weight= 60* power / (scaling_factor*max_generators_power)).add_to(m1)
+                folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [user_positions[j, 0], user_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power:.2e}', color='black', weight= 50* power / (scaling_factor*max_generators_power)).add_to(m1)
         #print()
         for i in range(num_generators):
             for j in range(num_storage):
                 power = power_GS[i, j].x
                 dissipated_power = power_loss_GS[i, j].x * x_GS[i, j].x
-                folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [storage_positions[j, 0], storage_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power}', color='yellow', weight= 20*x_GS[i, j].x).add_to(m1)
-                folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [storage_positions[j, 0], storage_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power}', color='blue', weight= 60*x_GS[i, j].x*power/(scaling_factor*max_generators_power)).add_to(m1)
+                #folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [storage_positions[j, 0], storage_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power:.2e}', color='yellow', weight= 60*x_GS[i, j].x).add_to(m1)
+                folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [storage_positions[j, 0], storage_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power:.2e}', color='blue', weight= 50*x_GS[i, j].x*power/(scaling_factor*max_generators_power)).add_to(m1)
         #print()
         for i in range(num_storage):
             for j in range(num_users):
                 power = power_SU[i, j].x
                 dissipated_power = power_loss_SU[i, j].x * x_SU[i, j].x
                 #print(i,j,x_SU[i, j], power)
-                folium.PolyLine([[storage_positions[i, 0], storage_positions[i, 1]], [user_positions[j, 0], user_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power}', color='black', weight= 60* power / (scaling_factor*max_generators_power)).add_to(m1)
+                folium.PolyLine([[storage_positions[i, 0], storage_positions[i, 1]], [user_positions[j, 0], user_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power}', color='black', weight= 50* power / (scaling_factor*max_generators_power)).add_to(m1)
 
         # Save the map as an HTML file
         curr_dir = os.getcwd()
@@ -417,6 +458,21 @@ def main():
         m1.save( curr_dir )
 
     
+
+        # Calculate total generated power
+        total_generated_power = sum(generator_power)
+
+        # Calculate power delivered to users
+        power_delivered_to_users = sum(power_GU[i, j].x * x_GU[i, j].x for i in range(len(generator_positions)) for j in range(len(user_positions)))
+
+        # Calculate power delivered to storage
+        power_delivered_to_storage = sum(power_GS[i, j].x * x_GS[i, j].x for i in range(len(generator_positions)) for j in range(len(storage_positions)))
+
+        # Calculate excess power
+        excess_power.append(total_generated_power - power_delivered_to_users - power_delivered_to_storage)
+
+
+
     TimestampedGeoJson(
     {"type": "FeatureCollection", 
     "features": all_features
@@ -432,29 +488,15 @@ def main():
     duration='PT50M',
     ).add_to(m)
 
-    """
-    filling_state = [100*stored_E[i].x/storage_Emax[i] for i in range(num_storage)]
-    for i in range(num_storage):
-        fill_color = 'red' if filling_state[i] < 50 else 'orange' if filling_state[i] < 90 else 'green'
-        folium.CircleMarker(
-            location=[storage_positions[i, 0], storage_positions[i, 1]],
-            radius=5,
-            color=fill_color,
-            fill=True,
-            fill_color=fill_color,
-            fill_opacity=0.6
-        ).add_to(m)
-    """
-
     # Save the map as an HTML file
     curr_dir = os.getcwd()
     curr_dir = os.path.join(curr_dir, "map.html")
     m.save(curr_dir)
+    print(curr_dir)
 
     for ii in solutions:
         print(ii)
-
-    
+  
 
 if __name__ == '__main__':
     main()  

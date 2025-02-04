@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import folium
 import branca.colormap as cm
+import os
 
 def process_data(andoain_gdf, selected, aver_power, aver_energy):
     selected['centroid'] = selected['geometry'].centroid
@@ -25,11 +26,15 @@ def process_data(andoain_gdf, selected, aver_power, aver_energy):
         row['fraction'] = row['area_m2'] / new_selected[new_selected['Seccion'] == row['Seccion']]['area_m2'].sum()
         total_persons_seccion = andoain_gdf[andoain_gdf['Seccion'] == row['Seccion']]['Total']
         total_persons_seccion = total_persons_seccion.iloc[0]
+        #print(row['Seccion'], row['fraction'], total_persons_seccion)
         persons = int(round(row['fraction']*total_persons_seccion))
         new_selected.at[index, 'persons'] = int(persons)
         new_selected.at[index, 'required_power'] = round(pd.to_numeric(persons * aver_power), 3)
         new_selected.at[index, 'available_energy'] = round(pd.to_numeric(row['area_m2'] * aver_energy), 3)
         new_selected.at[index, 'area_m2'] = round(pd.to_numeric(row['area_m2']), 3)
+        new_selected.at[index, 'fraction'] = round(pd.to_numeric(row['fraction']), 3)
+        #print(new_selected[['fraction']][:20])
+    #print((new_selected['fraction'] == 0).all())
     return new_selected
 
 def create_map(selected,new_selected):
@@ -103,14 +108,24 @@ def main():
     # Daily Output (kWh) = 300 W x 5 hours x 0.2 (assuming a 20% efficiency) = 0.3 kWh
     # 0.3 kWh x 30 = 9 kWh per month,
     # 9 kWh x 12 = 108 kWh per year.
+
+
     aver_energy =  0.3 # kWh/m2
-    gen_dir = "C:/Users/gfotidellaf/Desktop/E-grids/"
-    dir_shp = gen_dir  + "manual_selection"
-    andoain_gdf = gpd.read_file(r"C:\Users\gfotidellaf\Desktop\E-grids\census_data\geojson\sections_gipuzkoa_demographic_both.geojson")
+    gen_dir = os.getcwd()
+    #curr_dir = os.path.join(curr_dir, "map.html")
+    #gen_dir = "C:/Users/gfotidellaf/Desktop/E-grids/"
+    #dir_shp = gen_dir  + "manual_selection"
+    #andoain_gdf = gpd.read_file(r"C:\Users\gfotidellaf\Desktop\E-grids\census_data\geojson\sections_gipuzkoa_demographic_both.geojson")
+
+    dir_shp = os.path.join(gen_dir, "manual_selection")
+    andoain_gdf = gpd.read_file(os.path.join(gen_dir, "census_data", "geojson", "sections_gipuzkoa_demographic_both.geojson"))
     selected = gpd.read_file(dir_shp)
     new_selected = process_data(andoain_gdf, selected, aver_power, aver_energy)
+    new_selected.to_file(os.path.join(gen_dir,'Gipuzkoa_Shapefile','Persons_Powerreq_PVcapacity','persons_Powerreq_PVcapacity.shp'))
+    #print(new_selected[['fraction']][:20])
     m = create_map(selected, new_selected)
-    m.save('C:\\Users\\gfotidellaf\\Desktop\\E-grids\\map.html')
+    #m.save('C:\\Users\\gfotidellaf\\Desktop\\E-grids\\map.html')
+    m.save(os.path.join(gen_dir, "map_Powerreq_PVcapacity.html"))
 
 if __name__ == '__main__':
     main()
