@@ -104,10 +104,17 @@ def main():
 
     aver_power = 2.41888 # kW
 
-    # Daily Output (kWh) = Wattage (W) x Hours of Sunlight x Efficiency
+    # Daily Output (kWh) = Wattage (W) x Hours of Sunlight x Efficiency 
     # Daily Output (kWh) = 300 W x 5 hours x 0.2 (assuming a 20% efficiency) = 0.3 kWh
     # 0.3 kWh x 30 = 9 kWh per month,
     # 9 kWh x 12 = 108 kWh per year.
+    # Alternative calculation?:
+    # https://www.bluettipower.com/blogs/articles/solar-power-calculation-formula?srsltid=AfmBOoo0ReBH3RemsOiahtPtdUEO-XS-WOUimeokNl-ktxoID6gJgKcc
+    # Daily solar irradiance in Basque Country:  <= 3.8 kWh/m2 
+    # Perfomance ratio: 0.8 
+    # Efficiency: 0.2
+    # Daily output (kWh) = 3.8 kWh/m2 * 0.2 * 0.8 = 0.6 kWh/m2
+    # 0.6 kWh x 30 = 18 kWh per month
 
 
     aver_energy =  0.3 # kWh/m2

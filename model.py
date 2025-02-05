@@ -91,13 +91,13 @@ def define_model(input_data):
 
     for i in range(num_generators):
         for j in range(num_users):
-            model.addConstr(power_loss_GU[i, j] == 0.5*(V0 - (V0**2 - 4 * resistance_GU[i,j]*user_requirements[j])**0.5), 'power_loss_GU_{}'.format(i, j))
+            model.addConstr(power_loss_GU[i, j] == (0.25/resistance_GU[i,j])*(V0 - (V0**2 - 4 * resistance_GU[i,j]*user_requirements[j])**0.5)**2, 'power_loss_GU_{}'.format(i, j))
     for i in range(num_storage):
         for j in range(num_users):
-            model.addConstr(power_loss_SU[i, j] == 0.5*(V0 - (V0**2 - 4 * resistance_SU[i,j]*user_requirements[j])**0.5), 'power_loss_SU_{}'.format(i, j))
+            model.addConstr(power_loss_SU[i, j] == (0.25/resistance_SU[i,j])*(V0 - (V0**2 - 4 * resistance_SU[i,j]*user_requirements[j])**0.5)**2, 'power_loss_SU_{}'.format(i, j))
     for i in range(num_generators):
         for j in range(num_storage):
-            model.addConstr(power_loss_GS[i, j] == 0.5*(V0 - (V0**2 - 4 * resistance_GS[i,j]*storage_power_capacity[j])**0.5), 'power_loss_SU_{}'.format(i, j))
+            model.addConstr(power_loss_GS[i, j] == (0.25/resistance_GS[i,j])*(V0 - (V0**2 - 4 * resistance_GS[i,j]*storage_power_capacity[j])**0.5)**2, 'power_loss_GS_{}'.format(i, j))
 
 
     #for i in range(num_generators):
@@ -161,9 +161,6 @@ def define_model(input_data):
         0.01 * gr.quicksum([power_loss_GU[i, j]*x_GU[i, j] for i in range(num_generators) for j in range(num_users)]) + \
         0.01 * gr.quicksum([power_loss_GS[i, j]*x_GS[i, j] for i in range(num_generators) for j in range(num_storage)]) + \
         0.01 * gr.quicksum([power_loss_SU[i, j]*x_SU[i, j] for i in range(num_storage) for j in range(num_users)])
-
-    # Add regularization to the objective function
-    #obj += 0.01 * gr.quicksum([power_GU[i, j]**2 for i in range(num_generators) for j in range(num_users)])
 
     model.setObjective(obj, gr.GRB.MINIMIZE)
 

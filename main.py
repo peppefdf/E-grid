@@ -25,7 +25,7 @@ def generate_inputs(generator_power, user_requirements):
     #resistivity_factor = 5.0*10**-5 # Ohm/m
     # resistivity of Al = 2.82*10**-8 Ohm*m
     #resistivity_factor = 2.82*10**-8/0.0005 # Ohm/m 
-    resistivity_factor = 2.5*10**-4 # Ohm/m 
+    resistivity_factor = 2.5*10**-4 # Ohm/m (rho/A [Ohm*m/m2])
     
 
     # Define the center of the 2km2 square in Andoain
