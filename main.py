@@ -44,7 +44,7 @@ def generate_inputs(generator_power, user_requirements):
     centroids = Persons_Powerreq_PVcapacity_gdf['geometry'].centroid
 
     # Select random centroids for generators
-    random.seed(42)  # Set the seed value
+    random.seed(41)  # Set the seed value
     generator_positions = random.sample(list(centroids), num_generators)
     user_positions = random.sample([c for c in centroids if c not in generator_positions], num_users)
 
@@ -65,7 +65,7 @@ def generate_inputs(generator_power, user_requirements):
         # Randomly select a generator
         generator_index = i
         # Generate a random angle
-        np.random.seed(42)  # Set the seed value
+        np.random.seed(41)  # Set the seed value
         #angle = random.uniform(0, 2 * math.pi)
         angle = np.random.uniform(0, 2 * np.pi)
         # Calculate the x and y coordinates of the storage node
