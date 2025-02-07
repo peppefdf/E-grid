@@ -13,23 +13,81 @@ import random
 center_lat = 43.220034483305525
 center_lon = -2.021473511525546
 
+import requests
+import pandas as pd
+import os
+
+def fetch_pv_data(lat, lon):
+    url = "https://re.jrc.ec.europa.eu/pvgis5/seriescalc.php"
+
+    # Set API parameters
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "raddatabase": "PVGIS-SARAH3",  # Radiation database
+        "usehorizon": 1,  # Use horizon data (boolean value)
+        "outputformat": "json",  # Output format
+        "pvcalculation": 1,  # Basic PV calculation
+        "peakpower": 0.4,  # Peak power (kW)
+        "loss": 14,  # System losses (%)
+        "angle": 35,  # Tilt angle (degrees)
+        "index": 0,  # Tracking system (0 = fixed)
+        "optimalangles": 1,  # Optimal tilt angle
+        "start": "2023",  # Start time (YYYYMMDD:HHMM)
+        "end": "2023",  # End time (YYYYMMDD:HHMM)
+        "timeinterval": 1  # Time interval (minutes)
+    }
+
+    # Make API request
+    response = requests.get(url, params=params)
+
+    # Check if response was successful
+    if response.status_code == 200:
+        # Parse JSON response
+        data = response.json()
+        # Create a Pandas DataFrame
+        df = pd.DataFrame({
+            "Time": [hour["time"] for hour in data["outputs"]["hourly"]],
+            "G(i)": [hour["G(i)"] for hour in data["outputs"]["hourly"]],
+            "H_sun": [hour["H_sun"] for hour in data["outputs"]["hourly"]],
+            "T2m": [hour["T2m"] for hour in data["outputs"]["hourly"]],
+            "WS10m": [hour["WS10m"] for hour in data["outputs"]["hourly"]],
+            "Int": [hour["Int"] for hour in data["outputs"]["hourly"]],
+            "PV Power": [hour["P"] for hour in data["outputs"]["hourly"]]
+        })
+        return df
+    else:
+        print("Error:", response.status_code)
+        print("Response content:")
+        print(response.content)
+        return None
+
+def save_pv_data(df, filename):
+    curr_dir = os.getcwd()
+    curr_dir = os.path.join(curr_dir, filename)
+    df.to_csv(curr_dir, index=False)
+    print("Data saved to", filename)
+
+# Example usage:
+#lat = 43.22493388170683
+#lon = -2.0197695759229872
+#df = fetch_pv_data(lat, lon)
+#if df is not None:
+#    save_pv_data(df, "pv_data.csv")
+
 #def generate_inputs():
-def generate_inputs(generator_power, user_requirements):
+def generate_inputs(num_generators, num_users, num_storage, 
+                    generators_power, user_requirements):
+    
+    """
     # Define the number of nodes
     num_generators = 3
     num_users = 7
     num_storage = 3
-
-    #resistivity_factor = 0.001
-    #resistivity_factor = 1.12*10**-5 # Ohm/m
-    #resistivity_factor = 5.0*10**-5 # Ohm/m
-    # resistivity of Al = 2.82*10**-8 Ohm*m
+    """
     #resistivity_factor = 2.82*10**-8/0.0005 # Ohm/m 
     resistivity_factor = 2.5*10**-4 # Ohm/m (rho/A [Ohm*m/m2])
     
-
-    # Define the center of the 2km2 square in Andoain
-
     # Define the size of the square in kilometers
     square_size_km = 1
     # Convert the square size from kilometers to degrees
@@ -44,28 +102,19 @@ def generate_inputs(generator_power, user_requirements):
     centroids = Persons_Powerreq_PVcapacity_gdf['geometry'].centroid
 
     # Select random centroids for generators
-    random.seed(42)  # Set the seed value
+    random.seed(41)  # Set the seed value
     generator_positions = random.sample(list(centroids), num_generators)
     user_positions = random.sample([c for c in centroids if c not in generator_positions], num_users)
 
     generator_positions = np.array([(point.y, point.x) for point in generator_positions])
     user_positions = np.array([(point.y, point.x) for point in user_positions])
-
-    """
-    # Generate random positions for nodes
-    np.random.seed(0)
-    generator_positions = np.random.uniform(-square_size_deg, square_size_deg, (num_generators, 2)) + [center_lat, center_lon]
-    user_positions = np.random.uniform(-square_size_deg, square_size_deg, (num_users, 2)) + [center_lat, center_lon]
-    #storage_positions = np.random.uniform(-square_size_deg, square_size_deg, (num_storage, 2)) + [center_lat, center_lon]
-    # Generate storage nodes coordinates 100 meters away from the generators
-    """
-    
+  
     storage_positions = np.zeros((num_storage, 2))
     for i in range(num_storage):
         # Randomly select a generator
         generator_index = i
         # Generate a random angle
-        np.random.seed(42)  # Set the seed value
+        np.random.seed(41)  # Set the seed value
         #angle = random.uniform(0, 2 * math.pi)
         angle = np.random.uniform(0, 2 * np.pi)
         # Calculate the x and y coordinates of the storage node
@@ -73,17 +122,16 @@ def generate_inputs(generator_power, user_requirements):
         storage_positions[i, 1] = generator_positions[generator_index, 1] + 100 * math.sin(angle) / 111111  # convert meters to degrees
 
 
-    # Generate random power generation values for generators
-    ##generator_power = np.random.uniform(10000, 30000, num_generators)
-    #generator_power = [10000, 15000, 5000]
-
-    # Generate random power requirements for users
-    #user_requirements = np.random.uniform(3000, 6000, num_users)
+    for ig in range(num_generators):
+        lat, lon = generator_positions[ig]
+        df = fetch_pv_data(lat, lon)
+        if df is not None:
+            save_pv_data(df, "pv_data_" + str(ig) + ".csv")
 
     # Define the maximum capacity for each storage node
     storage_power_capacity = np.random.uniform(2000, 4000, num_storage)
     stored_energy = np.random.uniform(0, 5000, num_storage)
-    storage_Emax = np.random.uniform(10000, 20000, num_storage) # Wh
+    storage_Emax = np.random.uniform(10000, 12000, num_storage) # Wh
     time_power = 1
 
     print()
@@ -96,7 +144,7 @@ def generate_inputs(generator_power, user_requirements):
         'generator_positions': generator_positions.flatten(),
         'user_positions': user_positions.flatten(),
         'storage_positions': storage_positions.flatten(),
-        'generator_power': generator_power,
+        'generator_power': generators_power,
         'user_requirements': user_requirements,
         'storage_power_capacity': storage_power_capacity,
         'stored_energy': stored_energy,
@@ -107,14 +155,12 @@ def generate_inputs(generator_power, user_requirements):
 
     return input_data
 
-    #return num_generators, num_users, num_storage, generator_positions, user_positions, storage_positions, generator_power, user_requirements, storage_power_capacity, stored_energy, storage_Emax, time_power
-
 def generate_and_plot_signals():
     # Define parameters
     num_generators = 3
     num_users = 7
-    max_amplitudes_generators = [20000, 10000, 15000]
-    max_amplitudes_users = np.random.uniform(3000, 6000, size=num_users)
+    max_amplitudes_generators = [12000, 10000, 10000]
+    max_amplitudes_users = np.random.uniform(1000, 4000, size=num_users)
     time = np.arange(0, 24, 1)
     sigma = 1  # standard deviation of the Gaussian
     mu = np.pi  # mean of the Gaussian
@@ -160,13 +206,6 @@ def perturb_input(input_data, perturbation_factor=0.1):
     # Create a copy of the input data to avoid modifying the original values
     perturbed_data = input_data.copy()
 
-    #print()
-    #print('perturbing input data...')
-    #print('original inputs:')
-    #print(input_data['generator_power'])
-    #print(input_data['storage_power_capacity'])
-    #print(input_data['stored_energy'])
-
     # Perturb the generator power
     #for key in ['generator_power', 'storage_power_capacity', 'stored_energy', 'storage_Emax']:
     #for key in ['generator_power', 'stored_energy']:
@@ -177,23 +216,21 @@ def perturb_input(input_data, perturbation_factor=0.1):
             diff = np.subtract(perturbed_data[key], input_data[key])
             #print(f'Variation in {key}:', np.max(diff))
 
-    #print('perturbed inputs:')
-    #print(perturbed_data['generator_power'])
-    #print(perturbed_data['storage_power_capacity'])
-    #print(perturbed_data['stored_energy'])
-
     return perturbed_data
 
 
-#def get_color_for_charging_state(charging_state):
-#    r = int(255 * (1 - charging_state / 100))
-#    g = int(255 * charging_state / 100)
-#    return '#{:02x}{:02x}00'.format(r, g)
 def get_opacity_for_charging_state(charging_state):
     return charging_state / 100
 
 
 def main():
+    # Define the number of nodes
+    num_generators = 3
+    num_users = 7
+    num_storage = 3
+    # Define the center of the 2km2 square in Andoain
+    center_lat = 43.2169548061656
+    center_lon = -2.02130803900803
 
     #start_time = datetime.datetime(2017, 6, 2, 0, 0, 0)
     #start_time = datetime.datetime.now()
@@ -209,6 +246,10 @@ def main():
     # Create a Folium map
     m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
 
+    # Generate inputs
+    input_data = generate_inputs(num_generators, num_users, num_storage,
+                             generators_power, user_pow_requ)
+
     # Create a list to store the 24 results
     solutions = []
     all_features = []
@@ -222,7 +263,11 @@ def main():
 
         # Generate the inputs
         #input_data = generate_inputs()
-        input_data = generate_inputs(generator_power, user_requirements)
+        #input_data = generate_inputs(generator_power, user_requirements)
+        input_data['generator_power'] = generator_power
+        input_data['user_requirements'] = user_requirements
+        #input_data['stored_energy'] = stored_E
+        # Define the maximum capacity for each storage node
         # Call the define_model function with the required arguments
         model_instance, x_GU, x_GS, x_SU, power_GU, power_GS, power_SU, power_loss_GU, power_loss_GS, power_loss_SU, stored_E = model.define_model(input_data)
 
@@ -277,9 +322,14 @@ def main():
             print()
             solutions.append([ii,'Feasible'])
 
-
         # Update the stored energy
-        input_data['stored_energy'] = stored_E 
+        #input_data['stored_energy'] = stored_E
+        stored_E_values = [stored_E[j].x for j in range(num_storage)]
+        #input_data['stored_energy'] = stored_E 
+        input_data['stored_energy'] = stored_E_values 
+        #print()
+        #print('Stored Energy: ')
+        #print(stored_E_values)
 
 
         #                    "times": [current_time.isoformat(), (current_time + time_step).isoformat()],

@@ -110,7 +110,6 @@ def define_model(input_data):
     #    for j in range(num_storage):
     #        model.addConstr(power_loss_GS[i, j] == resistance_GS[i, j]*(storage_power_capacity[j]/230)**2, 'power_loss_GS_{}'.format(i, j)) 
 
-
     for j in range(num_users):
         model.addConstr(
             gr.quicksum([power_GU[i, j] * x_GU[i, j] - power_loss_GU[(i, j)]* x_GU[i, j] for i in range(num_generators)]) +
@@ -146,6 +145,9 @@ def define_model(input_data):
             stored_E[j],'stored_Energy_{}'.format(j)
         ) 
 
+
+    #for j in range(num_storage):
+    #    model.addConstr(stored_E[j] == input_data['stored_energy'][j] + gr.quicksum([power_GS[i, j] * x_GS[i, j] for i in range(num_generators)]) * time_power - gr.quicksum([power_SU[j, k] * x_SU[j, k] for k in range(num_users)]) * time_power)
     #obj = gr.quicksum([generator_power[i] for i in range(num_generators)]) - \
     #    gr.quicksum([power_GU[i, j] * x_GU[i, j] for i in range(num_generators) for j in range(num_users)]) - \
     #    gr.quicksum([power_GS[i, j] * x_GS[i, j] for i in range(num_generators) for j in range(num_storage)])
