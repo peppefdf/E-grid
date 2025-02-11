@@ -76,8 +76,10 @@ def save_pv_data(df, filename):
 #    save_pv_data(df, "pv_data.csv")
 
 #def generate_inputs():
+#def generate_inputs(num_generators, num_users, num_storage, 
+#                    generators_power, user_requirements):
 def generate_inputs(num_generators, num_users, num_storage, 
-                    generators_power, user_requirements):
+                    start_dt, user_requirements):
     
     """
     # Define the number of nodes
@@ -121,12 +123,51 @@ def generate_inputs(num_generators, num_users, num_storage,
         storage_positions[i, 0] = generator_positions[generator_index, 0] + 100 * math.cos(angle) / 111111  # convert meters to degrees
         storage_positions[i, 1] = generator_positions[generator_index, 1] + 100 * math.sin(angle) / 111111  # convert meters to degrees
 
-
+    """
     for ig in range(num_generators):
         lat, lon = generator_positions[ig]
         df = fetch_pv_data(lat, lon)
         if df is not None:
             save_pv_data(df, "pv_data_" + str(ig) + ".csv")
+    """
+
+    generators_power = []
+    for ig in range(num_generators):
+        lat, lon = generator_positions[ig]
+        df = fetch_pv_data(lat, lon)
+        if df is None:
+            print(f"No data for generator {ig} at position ({lat}, {lon})")
+        else:
+            df['Time'] = pd.to_datetime(df['Time'], format='%Y%m%d:%H%M')
+            # Calculate the absolute difference between each timestamp and the given timestamp
+            diff = np.abs(df['Time'] - start_dt)
+            # Find the index of the row with the smallest absolute difference
+            idx = np.argmin(diff)
+
+            df_24h = df.iloc[idx:idx+24]
+            hourly_power = df_24h['PV Power'].values
+            #print('hourly_power')
+            #print(hourly_power)
+            # Append the hourly power to the generator_power list
+            generators_power.append(hourly_power)
+            save_pv_data(df, "pv_data_" + str(ig) + ".csv")
+
+    # Convert the generator_power list to a numpy array
+    generators_power = np.array(generators_power)
+    print(np.shape(generators_power))
+    # Plot the signals
+    time = np.arange(0, 24, 1)
+    fig, ax = plt.subplots()
+    for i in range(num_generators):
+        ax.plot(time, generators_power[i], label=f'Generator {i+1}', color=f'C{i}',linewidth=3)
+    for i in range(num_users):
+        ax.plot(time, user_requirements[i], label=f'User {i+1}', color=f'C{i+num_generators}')
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Signal Amplitude')
+    ax.legend()
+    plt.show()
+    fig.savefig('signals.png')
+
 
     # Define the maximum capacity for each storage node
     storage_power_capacity = np.random.uniform(2000, 4000, num_storage)
@@ -160,7 +201,8 @@ def generate_and_plot_signals():
     num_generators = 3
     num_users = 7
     max_amplitudes_generators = [12000, 10000, 10000]
-    max_amplitudes_users = np.random.uniform(1000, 4000, size=num_users)
+    #max_amplitudes_users = np.random.uniform(3000, 4000, size=num_users)
+    max_amplitudes_users = np.random.uniform(100, 200, size=num_users)
     time = np.arange(0, 24, 1)
     sigma = 1  # standard deviation of the Gaussian
     mu = np.pi  # mean of the Gaussian
@@ -180,7 +222,7 @@ def generate_and_plot_signals():
 
     # Generate users requirements signals
     users_requirements = np.zeros((num_users, len(time)))
-    noise_std = 100
+    noise_std = 2
     for i in range(num_users):
         frequency = 1/24.
         # Generate Gaussian function
@@ -247,14 +289,24 @@ def main():
     m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
 
     # Generate inputs
+    #start_datetime = datetime.datetime.now()
+    start_datetime = datetime.datetime(2022, 7, 1, 0, 10, 0)
+    print('start_datetime:', start_datetime)
+    #input_data = generate_inputs(num_generators, num_users, num_storage,
+    #                         generators_power user_pow_requ)
     input_data = generate_inputs(num_generators, num_users, num_storage,
-                             generators_power, user_pow_requ)
+                                 start_datetime, user_pow_requ)
+
+
 
     # Create a list to store the 24 results
     solutions = []
     all_features = []
     max_generators_power = max(max(row) for row in generators_power)
     excess_power = []
+
+
+    generators_power = input_data['generator_power']
     for ii in range(len(generators_power[0])):
         generator_power = generators_power[:, ii][:3]
         user_requirements = user_pow_requ[:, ii]
