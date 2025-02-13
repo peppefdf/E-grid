@@ -68,16 +68,6 @@ def save_pv_data(df, filename):
     df.to_csv(curr_dir, index=False)
     print("Data saved to", filename)
 
-# Example usage:
-#lat = 43.22493388170683
-#lon = -2.0197695759229872
-#df = fetch_pv_data(lat, lon)
-#if df is not None:
-#    save_pv_data(df, "pv_data.csv")
-
-#def generate_inputs():
-#def generate_inputs(num_generators, num_users, num_storage, 
-#                    generators_power, user_requirements):
 def generate_inputs(num_generators, num_users, num_storage, 
                     start_dt, user_requirements):
     
@@ -102,6 +92,7 @@ def generate_inputs(num_generators, num_users, num_storage,
     # Read the shapefile into a GeoDataFrame
     Persons_Powerreq_PVcapacity_gdf = gpd.read_file(shp_path)
     centroids = Persons_Powerreq_PVcapacity_gdf['geometry'].centroid
+    area_m2 = Persons_Powerreq_PVcapacity_gdf['area_m2']
 
     # Select random centroids for generators
     random.seed(41)  # Set the seed value
@@ -110,7 +101,7 @@ def generate_inputs(num_generators, num_users, num_storage,
 
     generator_positions = np.array([(point.y, point.x) for point in generator_positions])
     user_positions = np.array([(point.y, point.x) for point in user_positions])
-  
+
     storage_positions = np.zeros((num_storage, 2))
     for i in range(num_storage):
         # Randomly select a generator
@@ -120,21 +111,14 @@ def generate_inputs(num_generators, num_users, num_storage,
         #angle = random.uniform(0, 2 * math.pi)
         angle = np.random.uniform(0, 2 * np.pi)
         # Calculate the x and y coordinates of the storage node
-        storage_positions[i, 0] = generator_positions[generator_index, 0] + 100 * math.cos(angle) / 111111  # convert meters to degrees
-        storage_positions[i, 1] = generator_positions[generator_index, 1] + 100 * math.sin(angle) / 111111  # convert meters to degrees
-
-    """
-    for ig in range(num_generators):
-        lat, lon = generator_positions[ig]
-        df = fetch_pv_data(lat, lon)
-        if df is not None:
-            save_pv_data(df, "pv_data_" + str(ig) + ".csv")
-    """
+        storage_positions[i, 0] = generator_positions[generator_index, 0] + 200 * math.cos(angle) / 111111  # convert meters to degrees
+        storage_positions[i, 1] = generator_positions[generator_index, 1] + 200 * math.sin(angle) / 111111  # convert meters to degrees
 
     generators_power = []
     for ig in range(num_generators):
         lat, lon = generator_positions[ig]
         df = fetch_pv_data(lat, lon)
+        area_m2_ig = area_m2.iloc[ig]
         if df is None:
             print(f"No data for generator {ig} at position ({lat}, {lon})")
         else:
@@ -145,9 +129,7 @@ def generate_inputs(num_generators, num_users, num_storage,
             idx = np.argmin(diff)
 
             df_24h = df.iloc[idx:idx+24]
-            hourly_power = df_24h['PV Power'].values
-            #print('hourly_power')
-            #print(hourly_power)
+            hourly_power = area_m2_ig * 0.75 * df_24h['PV Power'].values # 75% of surface covered
             # Append the hourly power to the generator_power list
             generators_power.append(hourly_power)
             save_pv_data(df, "pv_data_" + str(ig) + ".csv")
@@ -168,11 +150,10 @@ def generate_inputs(num_generators, num_users, num_storage,
     plt.show()
     fig.savefig('signals.png')
 
-
     # Define the maximum capacity for each storage node
-    storage_power_capacity = np.random.uniform(2000, 4000, num_storage)
-    stored_energy = np.random.uniform(0, 5000, num_storage)
-    storage_Emax = np.random.uniform(10000, 12000, num_storage) # Wh
+    storage_power_capacity = np.random.uniform(5000, 10000, num_storage)
+    stored_energy = np.random.uniform(30000, 40000, num_storage)
+    storage_Emax = np.random.uniform(40000, 50000, num_storage) # Wh
     time_power = 1
 
     print()
@@ -196,74 +177,72 @@ def generate_inputs(num_generators, num_users, num_storage,
 
     return input_data
 
-def generate_and_plot_signals():
+def generate_user_requirements():
     # Define parameters
-    num_generators = 3
     num_users = 7
-    max_amplitudes_generators = [12000, 10000, 10000]
-    #max_amplitudes_users = np.random.uniform(3000, 4000, size=num_users)
-    max_amplitudes_users = np.random.uniform(100, 200, size=num_users)
+    max_amplitudes_users = np.random.uniform(1000, 3000, size=num_users)
     time = np.arange(0, 24, 1)
     sigma = 1  # standard deviation of the Gaussian
     mu = np.pi  # mean of the Gaussian
     
-    # Generate generators signals
-    generators = np.zeros((num_generators, len(time)))
-    noise_std = 500
-    for i in range(num_generators):
-        #generators[i] = max_amplitudes_generators[i] * abs(np.sin(2 * np.pi * frequency * time))
-        # Add low-frequency noise
-        frequency = 1/24.
-        # Generate Gaussian function
-        x = 2 * np.pi * frequency * time
-        generators[i] = max_amplitudes_generators[i]*np.exp(-(x - mu)**2 / (2 * sigma**2))
-        generators[i] += noise_std * np.random.normal(size=len(time))
-        generators[i] = np.where(generators[i] < 0, 0, generators[i])
-
     # Generate users requirements signals
     users_requirements = np.zeros((num_users, len(time)))
-    noise_std = 2
+    noise_std = 100
     for i in range(num_users):
         frequency = 1/24.
         # Generate Gaussian function
-        x = 2 * np.pi * frequency * time
+        x = time
+        np.random.seed(42)
+        mu = 12 + np.random.normal(-3, 3)  # mean of the Gaussian with small noise
         users_requirements[i] = max_amplitudes_users[i]*np.exp(-(x - mu)**2 / (2 * sigma**2))
+
+        #x = 2 * np.pi * frequency * time
+        #mu = np.pi + np.random.normal(-0.8, 0.8)  # mean of the Gaussian with small noise
+        #users_requirements[i] = max_amplitudes_users[i]*np.exp(-(x - mu)**2 / (2 * sigma**2))
         users_requirements[i] += noise_std * np.random.normal(size=len(time))
         users_requirements[i] = np.where(users_requirements[i] < 0, 0, users_requirements[i])
-
-    # Plot the signals
-    fig, ax = plt.subplots()
-    for i in range(num_generators):
-        ax.plot(time, generators[i], label=f'Generator {i+1}', color=f'C{i}',linewidth=3)
-    for i in range(num_users):
-        ax.plot(time, users_requirements[i], label=f'User {i+1}', color=f'C{i+num_generators}')
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Signal Amplitude')
-    ax.legend()
-    plt.show()
-
-    return generators, users_requirements
-
-def perturb_input(input_data, perturbation_factor=0.1):
-    # Create a copy of the input data to avoid modifying the original values
-    perturbed_data = input_data.copy()
-
-    # Perturb the generator power
-    #for key in ['generator_power', 'storage_power_capacity', 'stored_energy', 'storage_Emax']:
-    #for key in ['generator_power', 'stored_energy']:
-    for key in ['generator_power', 'storage_power_capacity', 'stored_energy', 'storage_Emax']:
-        if key in perturbed_data:
-            perturbation = np.random.uniform(-perturbation_factor, perturbation_factor, size=perturbed_data[key].shape)
-            perturbed_data[key] = np.multiply(perturbed_data[key], (1 + perturbation))
-            diff = np.subtract(perturbed_data[key], input_data[key])
-            #print(f'Variation in {key}:', np.max(diff))
-
-    return perturbed_data
-
+        inverted_gauss = np.ones(len(time))
+        inverted_gauss = np.max(users_requirements[i])*inverted_gauss
+        users_requirements[i] = inverted_gauss - users_requirements[i]
+    return users_requirements
 
 def get_opacity_for_charging_state(charging_state):
     return charging_state / 100
 
+
+def generate_plot(generated_power, delivered_power_to_storage, delivered_power_to_users, stored_energies):
+    hours = [str(i) for i in range(24)]
+    variables = {
+        'Gen. power (kW)': generated_power,
+        'Power to users (kW)': delivered_power_to_users,
+        'Power to storage (kW)': delivered_power_to_storage,
+        'Stored energy (kWh)': stored_energies
+    }
+
+    x = np.arange(24)  # the label locations
+    width = 0.25  # the width of the bars
+
+    fig, axs = plt.subplots(len(variables), 1, figsize=(6, 8), layout='constrained')
+
+    colormaps = ['Greens', 'Reds', 'Blues', 'Greys']
+
+    for i, (attribute, measurement) in enumerate(variables.items()):
+        ax = axs[i]
+        for j, community in enumerate(measurement):
+            rects = ax.bar(x + j * width, community, width, label=f'Community {j+1}', color=plt.cm.get_cmap(colormaps[i])(0.5 + j * 0.25))
+        ax.set_ylabel(attribute, fontweight='bold')
+        #ax.set_title(attribute)
+        ax.set_xticks(x + width)
+        ax.set_xticklabels(hours)
+        ax.legend(loc='upper left', ncols=3)
+        ax.set_ylim(0, 1.2*np.max(np.max(measurement, axis=1)))
+        if i == len(variables) - 1:
+            ax.set_xlabel('Time (hours)', fontweight='bold')
+
+    curr_dir = os.getcwd()
+    plot_file = os.path.join(curr_dir, "plot_panel.png")
+    plt.savefig(plot_file, dpi=300)
+    return plot_file
 
 def main():
     # Define the number of nodes
@@ -274,22 +253,18 @@ def main():
     center_lat = 43.2169548061656
     center_lon = -2.02130803900803
 
-    #start_time = datetime.datetime(2017, 6, 2, 0, 0, 0)
-    #start_time = datetime.datetime.now()
-    # Midnight:
-    start_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    #time_step = datetime.timedelta(minutes=15)  
-    time_step = datetime.timedelta(hours=1)  
-
     scaling_factor = 0.8
 
-    generators_power, user_pow_requ = generate_and_plot_signals()
+    user_pow_requ = generate_user_requirements()
 
     # Create a Folium map
     m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
 
     # Generate inputs
-    #start_datetime = datetime.datetime.now()
+    # Midnight:
+    #start_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    #time_step = datetime.timedelta(minutes=15)  
+    time_step = datetime.timedelta(hours=1) 
     start_datetime = datetime.datetime(2022, 7, 1, 0, 10, 0)
     print('start_datetime:', start_datetime)
     #input_data = generate_inputs(num_generators, num_users, num_storage,
@@ -297,30 +272,37 @@ def main():
     input_data = generate_inputs(num_generators, num_users, num_storage,
                                  start_datetime, user_pow_requ)
 
-
-
     # Create a list to store the 24 results
     solutions = []
     all_features = []
-    max_generators_power = max(max(row) for row in generators_power)
     excess_power = []
 
-
     generators_power = input_data['generator_power']
+    max_generators_power = max(max(row) for row in generators_power)
+
+    Delivered_power_to_storage_hour = np.zeros((generators_power.shape[0], generators_power.shape[1]))
+    Delivered_power_to_users_hour = np.zeros((generators_power.shape[0], generators_power.shape[1]))
+    Energy_stored_hour = np.zeros((generators_power.shape[0], generators_power.shape[1]))
+
     for ii in range(len(generators_power[0])):
         generator_power = generators_power[:, ii][:3]
         user_requirements = user_pow_requ[:, ii]
 
-        current_time = start_time + ii * time_step
+        #current_time = start_time + ii * time_step
+        current_time = start_datetime + ii * time_step
+
+        print(generator_power)
+        print(user_requirements)
+        print(input_data['stored_energy'])
+        try:
+            print(input_data['stored_energy'].x)
+        except:
+            pass
 
         # Generate the inputs
-        #input_data = generate_inputs()
-        #input_data = generate_inputs(generator_power, user_requirements)
         input_data['generator_power'] = generator_power
         input_data['user_requirements'] = user_requirements
         #input_data['stored_energy'] = stored_E
-        # Define the maximum capacity for each storage node
-        # Call the define_model function with the required arguments
         model_instance, x_GU, x_GS, x_SU, power_GU, power_GS, power_SU, power_loss_GU, power_loss_GS, power_loss_SU, stored_E = model.define_model(input_data)
 
         # Set the inputs
@@ -346,28 +328,6 @@ def main():
             print("The model is infeasible")
             print()
             solutions.append([ii,'Infeasible'])
-            solved = False
-            while(solved==False):
-                print()
-                print('WARNING: model is being re-defined and executed!')
-                print()
-                perturbed_data = perturb_input(input_data, 0.3)
-                model_instance, x_GU, x_GS, x_SU, power_GU, power_GS, power_SU, power_loss_GU, power_loss_GS, power_loss_SU, stored_E = model.define_model(perturbed_data)
-                model_instance.optimize()
-                num_generators = perturbed_data['num_generators']
-                num_users = perturbed_data['num_users']
-                num_storage = perturbed_data['num_storage']
-                generator_positions = perturbed_data['generator_positions'].reshape((num_generators, 2))
-                user_positions = perturbed_data['user_positions'].reshape((num_users, 2))
-                storage_positions = perturbed_data['storage_positions'].reshape((num_storage, 2))
-                generator_power = perturbed_data['generator_power']
-                user_requirements = perturbed_data['user_requirements']
-                storage_power_capacity = perturbed_data['storage_power_capacity']
-                #stored_energy = perturbed_data['stored_energy']
-                storage_Emax = perturbed_data['storage_Emax']
-                #time_power = perturbed_data['time_power']
-                if (model_instance.status == GRB.OPTIMAL):
-                    solved = True
         else:
             print()
             print("The model is feasible")
@@ -377,12 +337,8 @@ def main():
         # Update the stored energy
         #input_data['stored_energy'] = stored_E
         stored_E_values = [stored_E[j].x for j in range(num_storage)]
-        #input_data['stored_energy'] = stored_E 
         input_data['stored_energy'] = stored_E_values 
-        #print()
-        #print('Stored Energy: ')
-        #print(stored_E_values)
-
+        #input_data['stored_energy'] = stored_E 
 
         #                    "times": [current_time.isoformat(), (current_time + time_step).isoformat()],
         points_lines = [
@@ -431,7 +387,7 @@ def main():
                             "times": [current_time.isoformat()], 
                             'icon': 'circle',                           
                             'iconstyle': {'color': 'green',
-                                        'radius': 5 + (15 * (100*stored_E[j].x/storage_Emax[j]) / 100),  # Calculate radius based on charging state
+                                        'radius': 5 + (10 * (stored_E[j].x/storage_Emax[j])),  # Calculate radius based on charging state
                                         'fillOpacity': get_opacity_for_charging_state(100*stored_E[j].x/storage_Emax[j])
                                         },
                             'popup': f'Storage Power capacity: {storage_power_capacity[j]/1000:.2f} kW <br> Charging state={100*stored_E[j].x/storage_Emax[j]:.2f}% ({stored_E[j].x:.2f} of {storage_Emax[j]:.2f})'      
@@ -454,7 +410,7 @@ def main():
                     "times": [current_time.isoformat(), current_time.isoformat()],                     
                     "style": {
                             "color": 'black',
-                            "weight": 50* power_GU[i, j].x * x_GU[i, j].x  / (scaling_factor*max_generators_power),
+                            "weight": 30* power_GU[i, j].x * x_GU[i, j].x  / (scaling_factor*max_generators_power),
                             },
                     'popup': f'Transmitted Power: {power_GU[i, j].x*x_GU[i, j].x/1000.:.2f} kW\nDissipated Power: {power_loss_GU[i, j].x*x_GU[i, j].x/1000:.2e} '      
                 }                                   
@@ -478,7 +434,7 @@ def main():
                     "times": [current_time.isoformat(), current_time.isoformat()],                    
                     "style": {
                             "color": 'blue',
-                            "weight": 50*power_GS[i, j].x * x_GS[i, j].x / (scaling_factor*max_generators_power) 
+                            "weight": 30*power_GS[i, j].x * x_GS[i, j].x / (scaling_factor*max_generators_power) 
                             },
                     'popup': f'Transmitted Power: {power_GS[i, j].x*x_GS[i, j].x/1000.:.2f} kW'       
                 }
@@ -502,7 +458,7 @@ def main():
                     "times": [current_time.isoformat(), current_time.isoformat()],                      
                     "style": {
                             "color": 'green',
-                            "weight": 50*power_SU[i, j].x * x_SU[i, j].x / (scaling_factor*max_generators_power)
+                            "weight": 30*power_SU[i, j].x * x_SU[i, j].x / (scaling_factor*max_generators_power)
                             },
                     'popup': f'Transmitted Power: {power_SU[i, j].x*x_SU[i, j].x/1000.:.2f} kW'         
                 }
@@ -512,54 +468,6 @@ def main():
             if x_SU[i,j].x > 0.5
         ]
         all_features.extend(points_lines) 
-
-
-        # Create a Folium map
-        m1 = folium.Map(location=[center_lat, center_lon], zoom_start=14)
-        # Add markers for generators, storage devices, and users
-        for i in range(num_generators):
-            total_power = sum(power_GS[i, j].x * x_GS[i, j].x for j in range(num_storage)) + sum(power_GU[i, j].x * x_GU[i, j].x for j in range(num_users))
-            folium.Marker([generator_positions[i, 0], generator_positions[i, 1]], popup=f'Generator {i}\nTotal Power: {total_power}', icon=folium.Icon(color='orange')).add_to(m1)
-        for i in range(num_storage):
-            total_power = sum(power_SU[i, j].x * x_SU[i, j].x for j in range(num_users))
-            folium.Marker([storage_positions[i, 0], storage_positions[i, 1]], popup=f'Storage {i}\nTotal Power: {total_power}', icon=folium.Icon(color='blue')).add_to(m1)
-        for i in range(num_users):
-            total_power = sum(power_GU[j, i].x * x_GU[j, i].x for j in range(num_generators)) + sum(power_SU[j, i].x*x_SU[j, i].x for j in range(num_storage))
-            #folium.Marker([user_positions[i, 0], user_positions[i, 1]], popup=f'User {i}\nTotal Power: {total_power}', icon=folium.Icon(color='red')).add_to(m1)
-            folium.Marker([user_positions[i, 0], user_positions[i, 1]], popup=f'User {i}\nRequested power: {user_requirements[i]/1000:.2f} kW', icon=folium.Icon(color='red')).add_to(m1)
-
-
-        # Add lines for transmission lines
-        for i in range(num_generators):
-            for j in range(num_users):
-                power = power_GU[i, j].x * x_GU[i, j].x 
-                dissipated_power = power_loss_GU[i, j].x * x_GU[i, j].x 
-                folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [user_positions[j, 0], user_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power:.2e}', color='black', weight= 50* power / (scaling_factor*max_generators_power)).add_to(m1)
-        #print()
-        for i in range(num_generators):
-            for j in range(num_storage):
-                power = power_GS[i, j].x
-                dissipated_power = power_loss_GS[i, j].x * x_GS[i, j].x
-                #folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [storage_positions[j, 0], storage_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power:.2e}', color='yellow', weight= 60*x_GS[i, j].x).add_to(m1)
-                folium.PolyLine([[generator_positions[i, 0], generator_positions[i, 1]], [storage_positions[j, 0], storage_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power:.2e}', color='blue', weight= 50*x_GS[i, j].x*power/(scaling_factor*max_generators_power)).add_to(m1)
-        #print()
-        for i in range(num_storage):
-            for j in range(num_users):
-                power = power_SU[i, j].x
-                dissipated_power = power_loss_SU[i, j].x * x_SU[i, j].x
-                #print(i,j,x_SU[i, j], power)
-                folium.PolyLine([[storage_positions[i, 0], storage_positions[i, 1]], [user_positions[j, 0], user_positions[j, 1]]], tooltip=f'Transmission Line\nPower: {power}\nDissipated Power: {dissipated_power}', color='black', weight= 50* power / (scaling_factor*max_generators_power)).add_to(m1)
-
-        # Save the map as an HTML file
-        curr_dir = os.getcwd()
-        name = current_time.isoformat()
-        name = name.replace(':', '-')
-        print(name)
-        curr_dir = os.path.join(curr_dir, "map_" + str(ii) + '_' + name + ".html")
-        #print(curr_dir)
-        m1.save( curr_dir )
-
-    
 
         # Calculate total generated power
         total_generated_power = sum(generator_power)
@@ -573,7 +481,18 @@ def main():
         # Calculate excess power
         excess_power.append(total_generated_power - power_delivered_to_users - power_delivered_to_storage)
 
+        delivered_power_to_storage = np.zeros(num_generators)
+        delivered_power_to_users = np.zeros(num_generators)
+        for jj in range(num_generators):
+            delivered_power_to_storage[jj] = sum(power_GS[jj, j].x * x_GS[jj, j].x for j in range(num_storage))
+            delivered_power_to_users[jj] = sum(power_GU[jj, j].x * x_GU[jj, j].x for j in range(num_users)) 
 
+
+        Delivered_power_to_storage_hour[:,ii] = delivered_power_to_storage
+        Delivered_power_to_users_hour[:,ii] = delivered_power_to_users
+        Energy_stored_hour[:,ii] = stored_E_values 
+        
+    plot_dir = generate_plot(generators_power, Delivered_power_to_storage_hour, Delivered_power_to_users_hour, Energy_stored_hour, )
 
     TimestampedGeoJson(
     {"type": "FeatureCollection", 
@@ -588,6 +507,18 @@ def main():
     date_options="YYYY/MM/DD HH:MM:SS",
     time_slider_drag_update=True,
     duration='PT50M',
+    ).add_to(m)
+
+
+    from folium import raster_layers
+    raster_layers.ImageOverlay(
+        image=plot_dir,
+        bounds=[[43.2292500962932, -1.979357144462435], [43.19312849807213, -1.94]],
+        opacity=0.5,
+        interactive=False,
+        cross_origin=False,
+        zindex=1,
+        image_size=[100, 300]  # smaller image size
     ).add_to(m)
 
     # Save the map as an HTML file
